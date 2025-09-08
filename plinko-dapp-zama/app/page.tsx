@@ -22,6 +22,7 @@ export default function PlinkoGame() {
     winRate: 0,
     averageMultiplier: 0,
   });
+
   const { toast } = useToast();
   const {
     isInitialized,
@@ -75,10 +76,10 @@ export default function PlinkoGame() {
 
   const handleGameResult = async (multiplier: number, slot: number) => {
     const result = { multiplier, slot, timestamp: Date.now() };
-    setGameResults((prev) => [result, ...prev.slice(0, 9)]); // Keep last 10 results
+    setGameResults((prev) => [result, ...prev.slice(0, 9)]);
     updatePlayerStats(multiplier);
     if (isInitialized) {
-      const gameId = await playGame(); // Get gameId from playGame
+      const gameId = await playGame();
       if (gameId !== null) {
         await submitGameResult(gameId, multiplier, slot);
       }
@@ -101,15 +102,14 @@ export default function PlinkoGame() {
     return await playGame();
   };
 
-  // Update balance periodically
+  // Update balance periodically (useContract manages state internally)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isInitialized && !isLoading) {
       interval = setInterval(async () => {
-        const newBalance = await getDecryptedBalance();
-        setBalance(newBalance);
-      }, 5000); // Update every 5 seconds
-      getDecryptedBalance().then(setBalance); // Initial update
+        await getDecryptedBalance();
+      }, 5000);
+      getDecryptedBalance(); // Initial update
     }
     return () => clearInterval(interval);
   }, [isInitialized, isLoading, getDecryptedBalance]);
@@ -118,9 +118,8 @@ export default function PlinkoGame() {
     <div className="min-h-screen bg-background">
       <Navigation onWalletConnected={handleWalletConnected} onWalletDisconnected={handleWalletDisconnected} />
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
-        {/* Mobile-first responsive grid */}
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 sm:gap-6">
-          {/* Game Area - Full width on mobile, 3/4 on desktop */}
+          {/* Game Area */}
           <div className="xl:col-span-3 order-1">
             <Card className="bg-card/50 border-border backdrop-blur-sm overflow-hidden">
               <CardHeader className="pb-3 sm:pb-6">
@@ -170,7 +169,7 @@ export default function PlinkoGame() {
                 />
               </CardContent>
             </Card>
-            {/* Recent Results - Show on mobile after game */}
+
             {gameResults.length > 0 && (
               <Card className="bg-card/50 border-border backdrop-blur-sm mt-4 sm:mt-6">
                 <CardHeader className="pb-3 sm:pb-6">
@@ -185,9 +184,7 @@ export default function PlinkoGame() {
                       <div
                         key={result.timestamp}
                         className="text-center p-2 sm:p-3 rounded-lg bg-background/30 hover:bg-background/50 transition-all duration-300 hover:scale-105"
-                        style={{
-                          animation: `slideInFromRight 0.3s ease-out forwards ${index * 100}ms`,
-                        }}
+                        style={{ animation: `slideInFromRight 0.3s ease-out forwards ${index * 100}ms` }}
                       >
                         <div className="text-sm sm:text-lg font-bold text-secondary">{result.multiplier}x</div>
                         <div className="text-xs text-muted-foreground">Slot {result.slot + 1}</div>
@@ -198,9 +195,9 @@ export default function PlinkoGame() {
               </Card>
             )}
           </div>
-          {/* Sidebar - Stack on mobile, sidebar on desktop */}
+
+          {/* Sidebar */}
           <div className="xl:col-span-1 order-2 xl:order-2 space-y-4 sm:space-y-6">
-            {/* Mobile indicator */}
             <div className="xl:hidden">
               <Card className="bg-card/50 border-border backdrop-blur-sm">
                 <CardContent className="p-3">
@@ -212,9 +209,7 @@ export default function PlinkoGame() {
               </Card>
             </div>
             <SecurityStatus address={walletAddress} securityManager={securityManager} isConnected={!!walletAddress} />
-            {/* Enhanced Leaderboard */}
             <Leaderboard entries={[]} currentPlayer={walletAddress} isLoading={isLoading} />
-            {/* Enhanced Game Stats */}
             <GameStats playerStats={walletAddress ? playerStats : undefined} isConnected={!!walletAddress} />
           </div>
         </div>
