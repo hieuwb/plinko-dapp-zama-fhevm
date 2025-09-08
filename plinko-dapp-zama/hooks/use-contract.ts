@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { createInstance, FhevmInstance } from "fhevmjs";
 import { createPublicClient, http, createWalletClient, custom } from "viem";
 import { sepolia } from "viem/chains";
-import { FHEPlinkoABI, CONTRACT_ADDRESS } from "../lib/contract";
+import { FHEPlinkoABI, CONTRACT_ADDRESS } from "@/lib/contract";
 import { useToast } from "@/hooks/use-toast";
 import { useSecurity } from "@/hooks/use-security";
+import { publicDecrypt } from "@/lib/relayer-sdk";
 
 export function useContract() {
   const [instance, setInstance] = useState<FhevmInstance | null>(null);
@@ -16,10 +17,11 @@ export function useContract() {
   const [fallbackMode, setFallbackMode] = useState(false);
   const [publicClient, setPublicClient] = useState<ReturnType<typeof createPublicClient> | null>(null);
   const [walletClient, setWalletClient] = useState<ReturnType<typeof createWalletClient> | null>(null);
+
   const { toast } = useToast();
   const { securityManager, isAuthenticated, authenticateUser, validateGameAttempt, recordGameResult } = useSecurity();
 
-  // Initialize clients only on client-side
+  // Initialize Viem clients
   useEffect(() => {
     if (typeof window !== "undefined" && window.ethereum) {
       const pubClient = createPublicClient({
@@ -35,215 +37,171 @@ export function useContract() {
     }
   }, []);
 
-  // Define getDecryptedBalance first to avoid ReferenceError
+  // 🔑 Decrypt balance via Relayer SDK
   const getDecryptedBalance = useCallback(async (): Promise<number> => {
-  if (!instance || !publicClient) return 0;
-  try {
-    const encryptedBalance = await publicClient.readContract({
-      address: CONTRACT_ADDRESS,
-      abi: FHEPlinkoABI,
-      functionName: "getBalance",
-    });
+    if (!publicClient) return 0;
+    try {
+      const encryptedBalance = (await publicClient.readContract({
+        address: CONTRACT_ADDRESS,
+        abi: FHEPlinkoABI,
+        functionName: "getBalance",
+      })) as `0x${string}`;
 
-    // Cập nhật theo API mới
-    const reencrypted = await instance.reencrypt(
-    encryptedBalance,
-    privateKey,
-    publicKey,
-    signature,
-    0xF25855cb0130a5916aD048e13Ba4Dd0f1e330eAC,
-    userAddress
-    );
+      const balance = await publicDecrypt(CONTRACT_ADDRESS, encryptedBalance);
+      return Number(balance);
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+      return 0;
+    }
+  }, [publicClient]);
 
-
-    return instance.decrypt(reencrypted);
-  } catch (error) {
-    console.error("Error fetching balance:", error);
-    return 0;
-  }
-}, [instance, publicClient]);
-
-
-const initializeContract = useCallback(
+  // Init FHE instance + user auth
+  const initializeContract = useCallback(
     async (walletAddress: string) => {
-      if (typeof window === "undefined" || !window.ethereum || !publicClient || !walletClient) {
+      if (!window.ethereum || !publicClient || !walletClient) {
         throw new Error("MetaMask or clients not found");
       }
       try {
         setIsLoading(true);
         console.log("[v0] Starting contract initialization for:", walletAddress);
-        const fheInstance = await createInstance({ chainId: 11155111 }); // Sepolia chainId
-        const { publicKey, privateKey } = await fheInstance.generateKeypair();
+
+        const fheInstance = await createInstance({ chainId: 11155111 }); // Sepolia
+        await fheInstance.generateKeypair();
         setInstance(fheInstance);
-        console.log("[v0] FHE instance initialized with publicKey:", publicKey);
+
         const authSuccess = await authenticateUser(walletAddress, fheInstance);
         if (!authSuccess) {
-          console.warn("[v0] Authentication failed, enabling fallback mode");
+          console.warn("[v0] Authentication failed, fallback mode enabled");
           setFallbackMode(true);
-        } else {
-          console.log("[v0] Authentication successful");
         }
+
         setIsInitialized(true);
-        if (fallbackMode) {
-          toast({
-            title: "Basic Mode Enabled",
-            description: "Some advanced features unavailable, but you can still play!",
-          });
-        } else {
-          toast({
-            title: "Contract Initialized",
-            description: "FHE contract connection established securely",
-          });
-        }
-      } catch (error: any) {
-        console.error("[v0] Critical initialization error:", error);
+        toast({
+          title: "Contract Initialized",
+          description: fallbackMode
+            ? "Fallback mode enabled - limited features"
+            : "FHE contract connection established",
+        });
+      } catch (error) {
+        console.error("[v0] Initialization error:", error);
         setFallbackMode(true);
         setIsInitialized(true);
         toast({
           title: "Fallback Mode",
-          description: "Playing in offline mode - limited features available",
+          description: "Playing in offline mode",
         });
       } finally {
         setIsLoading(false);
       }
     },
-    [toast, authenticateUser, publicClient, walletClient]
+    [toast, authenticateUser, publicClient, walletClient, fallbackMode]
   );
 
-  const playGame = useCallback(async (): Promise<number | null> => {
-    console.log("[v0] Handle play game called");
-    console.log(
-      "[v0] Play game called - initialized:",
-      isInitialized,
-      "authenticated:",
-      isAuthenticated,
-      "fallback:",
-      fallbackMode
-    );
-    if (!isInitialized || !publicClient || !walletClient) {
-      toast({
-        title: "Not Ready",
-        description: "Please wait for initialization to complete",
-        variant: "destructive",
-      });
-      return null;
-    }
-    if (!instance || !isAuthenticated) {
-      console.log("[v0] FHE instance or authentication not ready, using fallback mode");
-      const mockGameId = Math.floor(Math.random() * 1000000);
-      toast({
-        title: "Game Started (Offline)",
-        description: "Playing in offline mode - drop the ball!",
-      });
-      return mockGameId;
-    }
-    const validation = validateGameAttempt(await walletClient.getAddresses()[0]);
-    if (!validation.allowed) {
-      toast({
-        title: "Rate Limited",
-        description: validation.reason || "Please wait before playing again",
-        variant: "destructive",
-      });
-      return null;
-    }
-    try {
-      setIsLoading(true);
-      toast({
-        title: "Transaction Required",
-        description: "Please confirm the transaction in MetaMask",
-      });
-      console.log("[v0] Calling contract.play with encrypted bet...");
-      const bet = 10; // Example bet amount
-      const encryptedBet = await instance.encrypt32(bet);
-      const inputProof = instance.generateProof({ input: [bet] });
-      const { request } = await publicClient.simulateContract({
-        address: CONTRACT_ADDRESS,
-        abi: FHEPlinkoABI,
-        functionName: "play",
-        args: [encryptedBet, inputProof],
-      });
-      await walletClient.writeContract(request);
-      const gameId = Math.floor(Math.random() * 1000000); // Mock game ID for simplicity
-      toast({
-        title: "Game Started",
-        description: `Transaction confirmed! Game ID: ${gameId}. Drop the ball!`,
-      });
-      return gameId;
-    } catch (error: any) {
-      console.error("[v0] Error playing game:", error);
-      if (error.code === 4001) {
+  // 🎲 Play game (encrypt bet + call contract)
+  const playGame = useCallback(
+    async (betAmount: number = 10): Promise<number | null> => {
+      console.log("[v0] Play game with bet:", betAmount);
+
+      if (!isInitialized || !publicClient || !walletClient) {
         toast({
-          title: "Transaction Cancelled",
-          description: "You cancelled the transaction. Try again to play!",
+          title: "Not Ready",
+          description: "Please wait for initialization",
           variant: "destructive",
         });
-      } else if (error.code === -32603) {
+        return null;
+      }
+
+      if (!instance || !isAuthenticated) {
+        console.log("[v0] Using fallback mode");
+        return Math.floor(Math.random() * 1000000);
+      }
+
+      const validation = validateGameAttempt(await walletClient.getAddresses()[0]);
+      if (!validation.allowed) {
         toast({
-          title: "Network Error",
-          description: "Please check your network connection and try again",
+          title: "Rate Limited",
+          description: validation.reason || "Please wait before playing again",
           variant: "destructive",
         });
-      } else {
+        return null;
+      }
+
+      try {
+        setIsLoading(true);
+        toast({
+          title: "Transaction Required",
+          description: "Please confirm in MetaMask",
+        });
+
+        const encryptedBet = await instance.encrypt32(betAmount);
+        const inputProof = instance.generateProof({ input: [betAmount] });
+
+        const { request } = await publicClient.simulateContract({
+          address: CONTRACT_ADDRESS,
+          abi: FHEPlinkoABI,
+          functionName: "play",
+          args: [encryptedBet, inputProof],
+        });
+
+        await walletClient.writeContract(request);
+        return Math.floor(Math.random() * 1000000);
+      } catch (error: any) {
+        console.error("[v0] Error playing game:", error);
         toast({
           title: "Transaction Failed",
           description: error.message || "Failed to send transaction",
           variant: "destructive",
         });
+        return null;
+      } finally {
+        setIsLoading(false);
       }
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [instance, isInitialized, isAuthenticated, validateGameAttempt, toast, publicClient, walletClient]);
+    },
+    [instance, isInitialized, isAuthenticated, validateGameAttempt, toast, publicClient, walletClient]
+  );
 
+  // 📊 Submit result
   const submitGameResult = useCallback(
     async (gameId: number, multiplier: number, slot: number): Promise<void> => {
       const playerAddress = (await walletClient?.getAddresses()[0]) || "";
-      const isValidResult = recordGameResult(playerAddress, multiplier, slot);
-      if (!isValidResult || !publicClient || !walletClient) {
+      recordGameResult(playerAddress, multiplier, slot);
+
+      if (!instance || !isInitialized || fallbackMode) {
+        toast({
+          title: "Result Recorded (Offline)",
+          description: `Score: ${Math.round(multiplier * 100)} points`,
+        });
         return;
       }
-      const addToLocalLeaderboard = (address: string, score: number) => {
-        setBalance((prev) => prev + score);
-      };
-      if (playerAddress) {
-        const score = Math.round(multiplier * 100);
-        addToLocalLeaderboard(playerAddress, score);
-      }
-      if (instance && isInitialized && !fallbackMode) {
-        try {
-          setIsLoading(true);
-          const newBalance = await getDecryptedBalance();
-          setBalance(newBalance);
-          toast({
-            title: "Result Submitted",
-            description: `Game result recorded securely. Balance: ${newBalance}`,
-          });
-        } catch (error: any) {
-          console.error("Error submitting result:", error);
-          toast({
-            title: "Blockchain Submission Failed",
-            description: "Result saved locally - blockchain sync will retry later",
-            variant: "destructive",
-          });
-        } finally {
-          setIsLoading(false);
-        }
-      } else {
+
+      try {
+        setIsLoading(true);
+        const newBalance = await getDecryptedBalance();
+        setBalance(newBalance);
         toast({
-          title: "Result Recorded",
-          description: `Score: ${Math.round(multiplier * 100)} points (offline mode)`,
+          title: "Result Submitted",
+          description: `Game result recorded. Balance: ${newBalance}`,
         });
+      } catch (error) {
+        console.error("Error submitting result:", error);
+        toast({
+          title: "Blockchain Submission Failed",
+          description: "Result saved locally",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
       }
     },
-    [instance, isInitialized, fallbackMode, recordGameResult, toast, getDecryptedBalance, publicClient, walletClient]
+    [instance, isInitialized, fallbackMode, recordGameResult, toast, getDecryptedBalance, walletClient]
   );
 
+  // Auto update balance
   useEffect(() => {
-    if (isInitialized && instance && publicClient) {
+    if (isInitialized && publicClient) {
       getDecryptedBalance().then(setBalance);
     }
-  }, [isInitialized, instance, publicClient]);
+  }, [isInitialized, publicClient, getDecryptedBalance]);
 
   return {
     instance,
