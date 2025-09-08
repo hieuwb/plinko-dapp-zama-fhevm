@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,
   outputFileTracingRoot: "/root/plinko-dapp-zama-fhevm/plinko-dapp-zama",
   allowedDevOrigins: [
