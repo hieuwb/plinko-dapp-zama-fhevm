@@ -45,7 +45,7 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [balance, setBalance] = useState<number>(0);
 
-  const { playPlinko, getDecryptedBalance } = useContract();
+  const { playGame: playPlinko, getDecryptedBalance } = useContract();
 
   // Canvas dimensions
   const CANVAS_WIDTH = 800;
