@@ -45,7 +45,8 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [balance, setBalance] = useState<number>(0);
 
-  const { playGame: playPlinko, getDecryptedBalance } = useContract();
+  // dùng trực tiếp playGame từ hook
+  const { playGame, getDecryptedBalance } = useContract();
 
   // Canvas dimensions
   const CANVAS_WIDTH = 800;
@@ -59,7 +60,6 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
     const newPegs: Peg[] = [];
     const newSlots: Slot[] = [];
 
-    // Create pegs in triangular pattern
     const rows = 12;
     const pegRadius = 4;
     const rowSpacing = 45;
@@ -79,7 +79,6 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
       }
     }
 
-    // Create slots at bottom
     const slotCount = 15;
     const slotWidth = CANVAS_WIDTH / slotCount;
     const multipliers = [100, 50, 25, 10, 5, 2, 1.5, 1, 1.5, 2, 5, 10, 25, 50, 100];
@@ -126,12 +125,10 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Clear canvas with dark background
     ctx.fillStyle = "#1f2937";
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw slots
-    slots.forEach((slot, index) => {
+    slots.forEach((slot) => {
       const gradient = ctx.createLinearGradient(slot.x, CANVAS_HEIGHT - 60, slot.x, CANVAS_HEIGHT);
       gradient.addColorStop(0, slot.color + "40");
       gradient.addColorStop(1, slot.color + "80");
@@ -139,32 +136,25 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
       ctx.fillStyle = gradient;
       ctx.fillRect(slot.x, CANVAS_HEIGHT - 60, slot.width, 60);
 
-      // Slot borders
       ctx.strokeStyle = slot.color;
       ctx.lineWidth = 2;
       ctx.strokeRect(slot.x, CANVAS_HEIGHT - 60, slot.width, 60);
 
-      // Multiplier text
       ctx.fillStyle = "#ffffff";
       ctx.font = "12px monospace";
       ctx.textAlign = "center";
       ctx.fillText(`${slot.multiplier}x`, slot.x + slot.width / 2, CANVAS_HEIGHT - 35);
     });
 
-    // Draw pegs with glow effect
     pegs.forEach((peg) => {
-      // Glow effect
       ctx.shadowColor = "#8b5cf6";
       ctx.shadowBlur = 10;
       ctx.beginPath();
       ctx.arc(peg.x, peg.y, peg.radius, 0, Math.PI * 2);
       ctx.fillStyle = "#8b5cf6";
       ctx.fill();
-
-      // Reset shadow
       ctx.shadowBlur = 0;
 
-      // Inner circle
       ctx.beginPath();
       ctx.arc(peg.x, peg.y, peg.radius - 1, 0, Math.PI * 2);
       ctx.fillStyle = "#ffffff";
@@ -173,28 +163,19 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
 
     const currentBall = ballRef.current;
     if (currentBall) {
-      // Update ball physics
       const newBall = { ...currentBall };
-
-      // Apply gravity
       newBall.vy += GRAVITY;
-
-      // Apply friction
       newBall.vx *= FRICTION;
       newBall.vy *= FRICTION;
-
-      // Update position
       newBall.x += newBall.vx;
       newBall.y += newBall.vy;
 
-      // Collision with pegs
       pegs.forEach((peg) => {
         const dx = newBall.x - peg.x;
         const dy = newBall.y - peg.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance < newBall.radius + peg.radius) {
-          // Calculate collision response
           const angle = Math.atan2(dy, dx);
           const targetX = peg.x + Math.cos(angle) * (peg.radius + newBall.radius);
           const targetY = peg.y + Math.sin(angle) * (peg.radius + newBall.radius);
@@ -202,16 +183,13 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
           newBall.x = targetX;
           newBall.y = targetY;
 
-          // Bounce with some randomness
           const bounceAngle = angle + (Math.random() - 0.5) * 0.5;
           const speed = Math.sqrt(newBall.vx * newBall.vx + newBall.vy * newBall.vy) * BOUNCE_DAMPING;
-
           newBall.vx = Math.cos(bounceAngle) * speed;
           newBall.vy = Math.sin(bounceAngle) * speed;
         }
       });
 
-      // Collision with walls
       if (newBall.x - newBall.radius < 0) {
         newBall.x = newBall.radius;
         newBall.vx = -newBall.vx * BOUNCE_DAMPING;
@@ -221,15 +199,12 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
         newBall.vx = -newBall.vx * BOUNCE_DAMPING;
       }
 
-      // Update trail
       newBall.trail.push({ x: newBall.x, y: newBall.y });
       if (newBall.trail.length > 20) {
         newBall.trail.shift();
       }
 
-      // Check if ball reached bottom
       if (newBall.y > CANVAS_HEIGHT - 80) {
-        // Determine which slot the ball landed in
         const slotIndex = Math.floor(newBall.x / (CANVAS_WIDTH / slots.length));
         const clampedIndex = Math.max(0, Math.min(slots.length - 1, slotIndex));
         const landedSlot = slots[clampedIndex];
@@ -241,7 +216,6 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
         return;
       }
 
-      // Draw ball trail
       newBall.trail.forEach((point, index) => {
         const alpha = index / newBall.trail.length;
         ctx.globalAlpha = alpha * 0.5;
@@ -252,7 +226,6 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
       });
       ctx.globalAlpha = 1;
 
-      // Draw ball with glow
       ctx.shadowColor = "#00ffcc";
       ctx.shadowBlur = 15;
       ctx.beginPath();
@@ -269,39 +242,30 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
 
   useEffect(() => {
     const startAnimation = () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
       animate();
     };
 
     startAnimation();
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, []); // Empty dependency array to run only once
+  }, []);
 
   useEffect(() => {
-    // Only restart animation if we have pegs and slots initialized
     if (pegs.length > 0 && slots.length > 0) {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
       animate();
     }
   }, [animate]);
 
   const dropBall = async () => {
     if (!isConnected || isPlaying || isLoading) return;
-
     console.log("[v0] Drop ball clicked - connected:", isConnected, "playing:", isPlaying, "loading:", isLoading);
 
     try {
-      // Call playPlinko with a fixed bet (e.g., 0.01 ETH in wei)
-      await playPlinko(10000000000000000); // 0.01 ETH = 10^16 wei
+      await playGame(); // không truyền tham số
       console.log("[v0] Game started successfully");
 
       const newBall: Ball = {
@@ -327,18 +291,15 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
     setCurrentGameId(null);
   };
 
-  // Update balance periodically
   useEffect(() => {
     const updateBalance = async () => {
       const newBalance = await getDecryptedBalance();
-      if (newBalance !== undefined) {
-        setBalance(newBalance);
-      }
+      if (newBalance !== undefined) setBalance(newBalance);
     };
 
     if (isConnected && !isPlaying) {
-      const interval = setInterval(updateBalance, 5000); // Update every 5 seconds
-      updateBalance(); // Initial update
+      const interval = setInterval(updateBalance, 5000);
+      updateBalance();
       return () => clearInterval(interval);
     }
   }, [isConnected, isPlaying, getDecryptedBalance]);
@@ -371,7 +332,7 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
             className="bg-primary hover:bg-primary/90 text-primary-foreground glow-purple w-full"
           >
             <Play className="w-4 h-4 mr-2" />
-            {isPlaying ? "Ball Dropping..." : "Drop Ball (0.01 ETH)"}
+            {isPlaying ? "Ball Dropping..." : "Drop Ball"}
           </Button>
 
           <Button
@@ -385,7 +346,7 @@ export function PlinkoCanvas({ onGameResult, isConnected, isLoading }: PlinkoCan
           </Button>
         </div>
         <div className="text-center text-white mt-2">
-          Balance: {balance ? `${balance / 1000000000000000000} ETH` : "Loading..."}
+          Balance: {balance ? `${balance / 1e18} ETH` : "Loading..."}
         </div>
       </div>
     </div>
