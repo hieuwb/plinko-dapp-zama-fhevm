@@ -37,22 +37,29 @@ export function useContract() {
 
   // Define getDecryptedBalance first to avoid ReferenceError
   const getDecryptedBalance = useCallback(async (): Promise<number> => {
-    if (!instance || !publicClient) return 0;
-    try {
-      const encryptedBalance = await publicClient.readContract({
-        address: CONTRACT_ADDRESS,
-        abi: FHEPlinkoABI,
-        functionName: "getBalance",
-      });
-      const reencrypted = await instance.reencrypt(encryptedBalance, instance.getPublicKey());
-      return instance.decrypt(reencrypted);
-    } catch (error) {
-      console.error("Error fetching balance:", error);
-      return 0;
-    }
-  }, [instance, publicClient]);
+  if (!instance || !publicClient) return 0;
+  try {
+    const encryptedBalance = await publicClient.readContract({
+      address: CONTRACT_ADDRESS,
+      abi: FHEPlinkoABI,
+      functionName: "getBalance",
+    });
 
-  const initializeContract = useCallback(
+    // Cập nhật theo API mới
+    const reencrypted = await instance.reencrypt({
+      ciphertext: encryptedBalance,
+      publicKey: instance.getPublicKey(),
+    });
+
+    return instance.decrypt(reencrypted);
+  } catch (error) {
+    console.error("Error fetching balance:", error);
+    return 0;
+  }
+}, [instance, publicClient]);
+
+
+const initializeContract = useCallback(
     async (walletAddress: string) => {
       if (typeof window === "undefined" || !window.ethereum || !publicClient || !walletClient) {
         throw new Error("MetaMask or clients not found");
