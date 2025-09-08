@@ -71,7 +71,6 @@ export function ResponsiveCanvas({ onGameResult, isConnected, onPlayGame, isLoad
         <PlinkoCanvas
           onGameResult={onGameResult}
           isConnected={isConnected}
-          onPlayGame={onPlayGame}
           isLoading={isLoading}
         />
       </div>
