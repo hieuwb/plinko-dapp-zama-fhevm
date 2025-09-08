@@ -46,10 +46,15 @@ export function useContract() {
     });
 
     // Cập nhật theo API mới
-    const reencrypted = await instance.reencrypt({
-      ciphertext: encryptedBalance,
-      publicKey: instance.getPublicKey(),
-    });
+    const reencrypted = await instance.reencrypt(
+    encryptedBalance,
+    privateKey,
+    publicKey,
+    signature,
+    0xF25855cb0130a5916aD048e13Ba4Dd0f1e330eAC,
+    userAddress
+    );
+
 
     return instance.decrypt(reencrypted);
   } catch (error) {
